@@ -1,0 +1,5 @@
+Arduino-Rechteck → RC-Tiefpass → Arduino misst → Python analysiert
+
+* Rechtecksignal Arduino
+
+Was ist eigentlich ein DAQ?
