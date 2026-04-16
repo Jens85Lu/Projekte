@@ -5,25 +5,35 @@ from scipy.optimize import curve_fit
 import numpy as np
 
 # Daten einlesen
-ser = serial.Serial('/dev/ttyACM3', 250000)
+ser = serial.Serial('/dev/ttyACM4', 250000)
 time.sleep(1)  # 1 Sekunden warten, damit die Verbindung stabil ist
 ser.reset_input_buffer()  # Puffer leeren
 
-data = []
+times = []
+values = []
+print("Warte auf Daten...")
 
-while len(data) < 10000:
+while len(values) < 2000:
     line = ser.readline().decode(errors='ignore').strip()
-    if line.isdigit():  # Überprüfen, ob die Zeile eine Zahl ist
-        data.append(int(line))
+    if ',' in line:
+        try:
+            t_str, v_str = line.split(",")
+            times.append(int(t_str))
+            values.append(int(v_str))
+        except Exception as e:
+            print(f"Fehler beim Verarbeiten der Zeile: {e}")
+            pass
+t = (np.array(times) - times[0]) / 1000  # us → ms
+V = np.array(values)
 
 ser.close()
 
 
-dt = 0.1 # 0.1ms pro Messpunkt
-V = np.array(data) 
-t = np.arange(len(V)) * dt  # Zeitachse, 0.01 Sekunden pro Messpunkt
+#dt = .3 # 1ms pro Messpunkt
+#V = np.array(data) 
+#t = np.arange(len(V)) * dt  # Zeitachse
 
-def plot_data(data):
+def plot_data(t, V):
     plt.plot(t, V)
     plt.xlabel('Zeit (ms)')
     plt.ylabel('ADC-Wert')
@@ -31,7 +41,7 @@ def plot_data(data):
     plt.grid()
     plt.show()
 
-plot_data(data)
+plot_data(t, V)
 
 # === Parameter zur Flankenerkennung ===
 MIN_DROP = 50  # Mindestabfall, um eine Flanke zu erkennen
@@ -44,25 +54,37 @@ def rc_discharge(t, V0, tau):
 # === Flanken extrahieren ===
 
 falling_flanks = []
-current_flank = []
+current_flank_idx = []
 
 for i in range(1, len(V)):
     if V[i] < V[i-1]:
-        current_flank.append(V[i-1])
+        current_flank_idx.append(i-1)
     else:
-        if current_flank:
-            current_flank.append(V[i-1])  # Letzten Wert der Flanke hinzufügen
-            if (current_flank[0] - current_flank[-1] >= MIN_DROP) and (len(current_flank) >= MIN_LEN):
-                falling_flanks.append(np.array(current_flank))
-            current_flank = []
+        if current_flank_idx:
+            current_flank_idx.append(i-1)
+            start_idx = current_flank_idx[0]
+            end_idx = current_flank_idx[-1]
+            #current_flank = V[start_idx:end_idx+1]
+            if (V[start_idx] - V[end_idx] >= MIN_DROP) and (len(current_flank_idx) >= MIN_LEN):
+                falling_flanks.append((start_idx, end_idx))
+            current_flank_idx = []
 
 # letzte Flanke prüfen
-if current_flank:
-    current_flank.append(V[-1])
-    if (current_flank[0] - current_flank[-1] >= MIN_DROP) and (len(current_flank) >= MIN_LEN):
-        falling_flanks.append(np.array(current_flank))
+if current_flank_idx:
+    current_flank_idx.append(len(V)-1)
+    start_idx = current_flank_idx[0]
+    end_idx = current_flank_idx[-1]
+
+    if (V[start_idx] - V[end_idx] >= MIN_DROP) and (len(current_flank_idx) >= MIN_LEN):
+        falling_flanks.append((start_idx, end_idx))
 
 print(f"Gefundene Flanken: {len(falling_flanks)}")
+for idx, (start_idx, end_idx) in enumerate(falling_flanks):
+    V_flank = V[start_idx:end_idx]
+    t_flank = t[start_idx:end_idx]
+    t_flank = t_flank - t_flank[0]  # Zeit auf 0 setzen
+    tau = t_flank[-1]/np.log(V_flank[0]/V_flank[-1])  # Tau berechnen
+    print(tau)
 
 # === Fit jeder Flanke mit curve_fit===
 def nonlinear_fit(falling_flanks, dt):
