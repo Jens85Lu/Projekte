@@ -28,7 +28,7 @@ def probability(n, l, m, r, theta, phi):
 def sample_points(n, l, m, N=50000):
     points = []
     max_prob = None
-
+    # Rejection sampling
     for _ in range(N):
         r = np.random.exponential(scale=n**2)
         theta = np.random.uniform(0, np.pi)
